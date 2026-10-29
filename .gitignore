@@ -1,4 +1,5 @@
 /target
+/installer/output
 **/*.rs.bk
 *.pdb
 .DS_Store

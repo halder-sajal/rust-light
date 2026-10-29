@@ -670,7 +670,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     spawn_send_thread(window.as_weak(), live.clone());
 
-    window.show()?;
+    // `--minimized`: start hidden in the tray (used by the Windows
+    // installer's optional "start with Windows" autostart entry).
+    let start_minimized = std::env::args().any(|a| a == "--minimized");
+    if !start_minimized {
+        window.show()?;
+    }
     tray.show()?;
     slint::run_event_loop()?;
     Ok(())
