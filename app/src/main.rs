@@ -58,11 +58,17 @@ struct LiveParams {
     zones: Vec<config::LedZone>,
     processing: config::ProcessingConfig,
     devices: Vec<config::DeviceConfig>,
+    max_send_fps: f32,
 }
 
 impl LiveParams {
     fn from_config(cfg: &config::Config) -> Self {
-        Self { zones: cfg.led.zones.clone(), processing: cfg.processing, devices: cfg.devices.clone() }
+        Self {
+            zones: cfg.led.zones.clone(),
+            processing: cfg.processing,
+            devices: cfg.devices.clone(),
+            max_send_fps: cfg.max_send_fps,
+        }
     }
 }
 
@@ -88,6 +94,8 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
         let mut senders: Vec<DeviceSender> = Vec::new();
         let mut senders_for: Vec<config::DeviceConfig> = Vec::new();
         let mut connected: Vec<bool> = Vec::new();
+        // Far enough in the past that the very first frame always sends.
+        let mut last_sent = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
         loop {
             let Ok(frame) = capturer.capture(&display_id) else {
@@ -98,6 +106,17 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
             if params.zones.is_empty() {
                 continue;
             }
+
+            // Rate cap: drop this frame entirely (no sampling/processing/
+            // send work at all) if it arrived before the minimum interval
+            // has elapsed since the last one we actually sent.
+            if params.max_send_fps > 0.0 {
+                let min_interval = std::time::Duration::from_secs_f64(1.0 / params.max_send_fps as f64);
+                if last_sent.elapsed() < min_interval {
+                    continue;
+                }
+            }
+            last_sent = std::time::Instant::now();
 
             if senders_for != params.devices {
                 senders = build_device_senders(&params.devices);
@@ -176,6 +195,15 @@ const RESOLUTION_PRESETS: &[(&str, u32, u32)] = &[
     ("1280x720", 1280, 720),
     ("640x360", 640, 360),
     ("320x180", 320, 180),
+];
+
+/// (label, fps) — 0.0 means unlimited (process/send as fast as frames
+/// arrive).
+const MAX_FPS_PRESETS: &[(&str, f32)] = &[
+    ("Unlimited", 0.0),
+    ("60 FPS", 60.0),
+    ("30 FPS", 30.0),
+    ("15 FPS", 15.0),
 ];
 
 /// How far the gamma slider can push gamma away from 1.0 (neutral), in
@@ -371,6 +399,38 @@ fn main() -> Result<(), slint::PlatformError> {
         &state.borrow().devices,
         &[],
     ))));
+
+    let max_fps_labels: Vec<slint::SharedString> =
+        MAX_FPS_PRESETS.iter().map(|(label, _)| (*label).into()).collect();
+    window.set_max_fps_options(slint::ModelRc::new(slint::VecModel::from(max_fps_labels)));
+    {
+        let current = state.borrow().max_send_fps;
+        let initial_max_fps_index = MAX_FPS_PRESETS
+            .iter()
+            .position(|(_, fps)| *fps == current)
+            .unwrap_or(0) as i32;
+        window.set_max_fps_index(initial_max_fps_index);
+    }
+
+    {
+        let window_weak = window.as_weak();
+        let state = state.clone();
+        let live = live.clone();
+        window.on_max_fps_changed(move |index| {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let (_, fps) = MAX_FPS_PRESETS[index.clamp(0, MAX_FPS_PRESETS.len() as i32 - 1) as usize];
+            state.borrow_mut().max_send_fps = fps;
+            sync_live(&live, &state.borrow());
+            let status = match state.borrow().save() {
+                Ok(()) => "Saved".to_string(),
+                Err(e) => format!("Failed to save: {e}"),
+            };
+            window.set_devices_status(status.into());
+            clear_status_after(&window, MainWindow::set_devices_status);
+        });
+    }
 
     {
         let window_weak = window.as_weak();

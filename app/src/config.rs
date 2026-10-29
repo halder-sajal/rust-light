@@ -211,6 +211,13 @@ pub struct Config {
     pub led: LedConfig,
     #[serde(default)]
     pub processing: ProcessingConfig,
+    /// 0.0 = unlimited (process/send as fast as frames arrive). Otherwise
+    /// the send thread drops frames that arrive faster than this rate
+    /// without doing any work for them, to cut CPU usage during fast-moving
+    /// screen content (ambient lighting doesn't need 100+ updates/sec to
+    /// look smooth).
+    #[serde(default)]
+    pub max_send_fps: f32,
 }
 
 impl Config {
