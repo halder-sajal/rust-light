@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wled-proto",
+    "crates/capture",
+    "crates/pipeline",
+    "app",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+thiserror = "1"

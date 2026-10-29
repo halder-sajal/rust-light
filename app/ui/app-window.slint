@@ -1,0 +1,1136 @@
+import { Button, AboutSlint, ComboBox, LineEdit, SpinBox, Slider, CheckBox } from "std-widgets.slint";
+
+export struct DeviceRow {
+    name: string,
+    host: string,
+    port: int,
+    connected: bool,
+}
+
+export struct LedZoneRow {
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+}
+
+export struct GapRow {
+    edge-index: int,
+    after-led: int,
+    size: int,
+}
+
+export struct LedColorRow {
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    color: color,
+}
+
+export global Palette {
+    out property <color> bg: #1a1b1e;
+    out property <color> bg-elevated: #22232a;
+    out property <color> sidebar-bg: #15161a;
+    out property <color> border: #2c2d35;
+    out property <color> text-primary: #e8e8ea;
+    out property <color> text-secondary: #8b8d96;
+    out property <color> accent: #ff8c42;
+    out property <color> accent-dim: #ff8c4230;
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 40px;
+    border-radius: 8px;
+    background: selected ? Palette.accent-dim : (ta.has-hover ? Palette.bg-elevated : transparent);
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+
+        Rectangle {
+            width: 3px;
+            border-radius: 2px;
+            background: selected ? Palette.accent : transparent;
+        }
+
+        Text {
+            text: root.label;
+            vertical-alignment: center;
+            color: selected ? Palette.text-primary : Palette.text-secondary;
+            font-size: 14px;
+            font-weight: selected ? 600 : 400;
+        }
+    }
+}
+
+component Sidebar inherits Rectangle {
+    in property <int> selected-index;
+    callback select(int);
+    callback hide-to-tray();
+
+    width: 190px;
+    background: Palette.sidebar-bg;
+    border-width: 1px;
+    border-color: Palette.border;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Image {
+                source: @image-url("app-icon.png");
+                width: 22px;
+                height: 22px;
+            }
+            Text {
+                text: "rustlight";
+                font-size: 17px;
+                font-weight: 700;
+                color: Palette.text-primary;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle { height: 18px; }
+
+        NavItem {
+            label: "Devices";
+            selected: root.selected-index == 0;
+            clicked => { root.select(0); }
+        }
+        NavItem {
+            label: "LED";
+            selected: root.selected-index == 1;
+            clicked => { root.select(1); }
+        }
+        NavItem {
+            label: "Display";
+            selected: root.selected-index == 2;
+            clicked => { root.select(2); }
+        }
+        NavItem {
+            label: "Processing";
+            selected: root.selected-index == 3;
+            clicked => { root.select(3); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Button {
+            text: "Hide to tray";
+            clicked => { root.hide-to-tray(); }
+        }
+
+        Rectangle { height: 8px; }
+
+        about-link := TouchArea {
+            height: about-text.height + 8px;
+            clicked => { about-popup.show(); }
+
+            about-text := Text {
+                text: "About";
+                font-size: 12px;
+                color: about-link.has-hover ? Palette.text-primary : Palette.text-secondary;
+            }
+
+            about-popup := PopupWindow {
+                x: 0px;
+                y: -(about-popup-content.height + 8px);
+                width: 260px;
+                close-policy: close-on-click-outside;
+
+                about-popup-content := Rectangle {
+                    background: Palette.bg-elevated;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 6px;
+                        alignment: start;
+
+                        Text {
+                            text: "rustlight";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Palette.text-primary;
+                        }
+
+                        AboutSlint {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+component DisplayPage inherits Rectangle {
+    in property <[string]> display-options;
+    in property <[string]> resolution-options;
+    in-out property <int> display-index;
+    in-out property <int> resolution-index;
+    in property <string> status-text;
+    callback save(int, int);
+
+    background: Palette.bg;
+
+    VerticalLayout {
+        padding: 32px;
+        alignment: start;
+
+        HorizontalLayout {
+            alignment: start;
+
+            VerticalLayout {
+                max-width: 480px;
+                spacing: 10px;
+
+                Text {
+                    text: "Display";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Palette.text-primary;
+                }
+                Text {
+                    text: "Choose which monitor to capture and the resolution frames are downscaled to before processing.";
+                    font-size: 13px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                Rectangle { height: 10px; }
+
+                Text {
+                    text: "Monitor";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                }
+                ComboBox {
+                    model: root.display-options;
+                    current-index <=> root.display-index;
+                }
+
+                Rectangle { height: 6px; }
+
+                Text {
+                    text: "Capture resolution";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                }
+                ComboBox {
+                    model: root.resolution-options;
+                    current-index <=> root.resolution-index;
+                }
+
+                Rectangle { height: 14px; }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Button {
+                        text: "Save";
+                        primary: true;
+                        clicked => { root.save(root.display-index, root.resolution-index); }
+                    }
+                    Text {
+                        text: root.status-text;
+                        color: Palette.accent;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component DevicesPage inherits Rectangle {
+    in property <[DeviceRow]> devices;
+    in-out property <string> new-name;
+    in-out property <string> new-host;
+    in-out property <string> new-port: "21324";
+    in property <string> status-text;
+    callback add-device(string, string, string);
+    callback remove-device(int);
+
+    background: Palette.bg;
+
+    VerticalLayout {
+        padding: 32px;
+        alignment: start;
+
+        HorizontalLayout {
+            alignment: start;
+
+            VerticalLayout {
+                max-width: 640px;
+                spacing: 10px;
+
+        Text {
+            text: "Devices";
+            font-size: 22px;
+            font-weight: 700;
+            color: Palette.text-primary;
+        }
+        Text {
+            text: "Add the WLED devices to send ambient colors to. Connecting to them isn't wired up yet — this only saves the device list.";
+            font-size: 13px;
+            color: Palette.text-secondary;
+            wrap: word-wrap;
+        }
+
+        Rectangle { height: 6px; }
+
+        Rectangle {
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Palette.border;
+            background: Palette.bg-elevated;
+
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+
+                Text {
+                    text: "Add device";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Palette.text-primary;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        placeholder-text: "Name (e.g. Living room)";
+                        text <=> root.new-name;
+                    }
+                    LineEdit {
+                        placeholder-text: "Host / IP";
+                        text <=> root.new-host;
+                    }
+                    LineEdit {
+                        placeholder-text: "Port";
+                        text <=> root.new-port;
+                        width: 90px;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Button {
+                        text: "Add";
+                        primary: true;
+                        clicked => {
+                            root.add-device(root.new-name, root.new-host, root.new-port);
+                        }
+                    }
+                    Text {
+                        text: root.status-text;
+                        color: Palette.accent;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 6px; }
+
+        Text {
+            text: "Saved devices";
+            font-size: 13px;
+            font-weight: 600;
+            color: Palette.text-secondary;
+        }
+
+        VerticalLayout {
+            spacing: 6px;
+
+            for device[i] in root.devices : Rectangle {
+                height: 48px;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Palette.border;
+                background: Palette.bg-elevated;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        y: 20px;
+                        background: device.connected ? #3ddc84 : Palette.text-secondary;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: device.name;
+                            color: Palette.text-primary;
+                            font-size: 13px;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: "\{device.host}:\{device.port}";
+                            color: Palette.text-secondary;
+                            font-size: 11px;
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Text {
+                        text: device.connected ? "Connected" : "Not connected";
+                        color: Palette.text-secondary;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+
+                    Button {
+                        text: "Remove";
+                        clicked => { root.remove-device(i); }
+                    }
+                }
+            }
+        }
+            }
+        }
+    }
+}
+
+component LedPage inherits Rectangle {
+    in-out property <int> led-type-index;
+    in-out property <int> count-top;
+    in-out property <int> count-right;
+    in-out property <int> count-bottom;
+    in-out property <int> count-left;
+    property <int> total-leds: count-top + count-right + count-bottom + count-left;
+
+    in-out property <bool> reverse-direction;
+    in-out property <int> start-edge-index;
+    in-out property <int> start-offset;
+    property <int> start-edge-max: start-edge-index == 0 ? max(0, count-top - 1)
+        : start-edge-index == 1 ? max(0, count-right - 1)
+        : start-edge-index == 2 ? max(0, count-bottom - 1)
+        : max(0, count-left - 1);
+
+    in-out property <float> sampling-depth: 10;
+    in-out property <float> corner-overlap: 0;
+
+    in property <[GapRow]> gaps;
+    in-out property <int> new-gap-edge-index;
+    in-out property <int> new-gap-after;
+    in-out property <int> new-gap-size: 4;
+    property <int> new-gap-after-max: new-gap-edge-index == 0 ? max(0, count-top - 1)
+        : new-gap-edge-index == 1 ? max(0, count-right - 1)
+        : new-gap-edge-index == 2 ? max(0, count-bottom - 1)
+        : max(0, count-left - 1);
+
+    in property <[LedZoneRow]> zones;
+    in property <string> status-text;
+
+    callback add-gap(int, int, int);
+    callback remove-gap(int);
+    callback reset-layout();
+    callback save();
+    callback zone-moved(int, float, float);
+    callback zone-resized(int, float, float);
+
+    background: Palette.bg;
+
+    VerticalLayout {
+        padding: 32px;
+        alignment: start;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 24px;
+
+            VerticalLayout {
+                max-width: 340px;
+                spacing: 8px;
+
+                Text {
+                    text: "LED";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Palette.text-primary;
+                }
+                Text {
+                    text: "Describe the physical LED strip around your monitor and where each LED samples color from.";
+                    font-size: 13px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                }
+
+                Rectangle { height: 6px; }
+
+                Text { text: "LED type"; font-size: 12px; color: Palette.text-secondary; }
+                ComboBox {
+                    model: ["RGB", "RGBW"];
+                    current-index <=> root.led-type-index;
+                }
+
+                Rectangle { height: 6px; }
+
+                Text { text: "LEDs per edge"; font-size: 12px; color: Palette.text-secondary; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Top"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 300;
+                            value <=> root.count-top;
+                            edited(v) => { root.reset-layout(); }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Right"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 300;
+                            value <=> root.count-right;
+                            edited(v) => { root.reset-layout(); }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Bottom"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 300;
+                            value <=> root.count-bottom;
+                            edited(v) => { root.reset-layout(); }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Left"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 300;
+                            value <=> root.count-left;
+                            edited(v) => { root.reset-layout(); }
+                        }
+                    }
+                }
+                Text {
+                    text: "Total: \{root.total-leds} LEDs";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Palette.text-primary;
+                }
+
+                Rectangle { height: 6px; }
+
+                CheckBox {
+                    text: "Reverse direction (counter-clockwise)";
+                    checked <=> root.reverse-direction;
+                    toggled => { root.reset-layout(); }
+                }
+
+                Rectangle { height: 6px; }
+
+                Text { text: "LED #1 starting position"; font-size: 12px; color: Palette.text-secondary; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    ComboBox {
+                        model: ["Top edge", "Right edge", "Bottom edge", "Left edge"];
+                        current-index <=> root.start-edge-index;
+                        selected(s) => { root.reset-layout(); }
+                    }
+                    SpinBox {
+                        minimum: 0;
+                        maximum: root.start-edge-max;
+                        value <=> root.start-offset;
+                        edited(v) => { root.reset-layout(); }
+                    }
+                }
+
+                Rectangle { height: 6px; }
+
+                Text {
+                    text: "Sampling depth: \{round(root.sampling-depth)}%";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                }
+                Slider {
+                    minimum: 2;
+                    maximum: 40;
+                    value <=> root.sampling-depth;
+                    changed(v) => { root.reset-layout(); }
+                }
+
+                Rectangle { height: 6px; }
+
+                Text {
+                    text: "Corner overlap: \{round(root.corner-overlap)}% (0 = clean diagonal at corners, higher = adjacent edges sample more of the same corner area — helps catch content like letterboxed video reaching into the corner)";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                }
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.corner-overlap;
+                    changed(v) => { root.reset-layout(); }
+                }
+
+                Rectangle { height: 6px; }
+
+                Text {
+                    text: "Gaps (physical breaks — the edge's LEDs compact to fit around it)";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                }
+                ComboBox {
+                    model: ["Top edge", "Right edge", "Bottom edge", "Left edge"];
+                    current-index <=> root.new-gap-edge-index;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "After LED #"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox { minimum: 0; maximum: root.new-gap-after-max; value <=> root.new-gap-after; }
+                    }
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Size (LEDs)"; font-size: 11px; color: Palette.text-secondary; }
+                        SpinBox { minimum: 1; maximum: 50; value <=> root.new-gap-size; }
+                    }
+                    Button {
+                        text: "Add gap";
+                        clicked => { root.add-gap(root.new-gap-edge-index, root.new-gap-after, root.new-gap-size); }
+                    }
+                }
+                for gap[i] in root.gaps : HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: (gap.edge-index == 0 ? "Top" : gap.edge-index == 1 ? "Right"
+                            : gap.edge-index == 2 ? "Bottom" : "Left")
+                            + ", after LED #\{gap.after-led}, \{gap.size} LEDs wide";
+                        color: Palette.text-secondary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        wrap: word-wrap;
+                    }
+                    Button {
+                        text: "Remove";
+                        clicked => { root.remove-gap(i); }
+                    }
+                }
+
+                Rectangle { height: 10px; }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Button {
+                        text: "Reset layout";
+                        clicked => { root.reset-layout(); }
+                    }
+                    Button {
+                        text: "Save";
+                        primary: true;
+                        clicked => { root.save(); }
+                    }
+                }
+                Text {
+                    text: root.status-text;
+                    color: Palette.accent;
+                    font-size: 13px;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: "Preview — drag a zone to move it, drag its corner handle to resize";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                    max-width: 860px;
+                }
+
+                screen := Rectangle {
+                    width: 860px;
+                    height: 484px;
+                    background: #000000;
+                    border-width: 2px;
+                    border-color: Palette.border;
+
+                    for zone[i] in root.zones : Rectangle {
+                        property <float> rel-x;
+                        property <float> rel-y;
+                        property <float> rel-w;
+                        property <float> rel-h;
+
+                        init => {
+                            self.rel-x = zone.x;
+                            self.rel-y = zone.y;
+                            self.rel-w = zone.w;
+                            self.rel-h = zone.h;
+                        }
+
+                        x: self.rel-x * screen.width;
+                        y: self.rel-y * screen.height;
+                        width: self.rel-w * screen.width;
+                        height: self.rel-h * screen.height;
+                        background: Palette.accent-dim;
+                        border-width: 1px;
+                        border-color: Palette.accent;
+
+                        Text {
+                            text: "\{i + 1}";
+                            width: 100%;
+                            height: 100%;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            color: Palette.text-primary;
+                            font-size: 9px;
+                            overflow: clip;
+                        }
+
+                        move-area := TouchArea {
+                            width: parent.width - 8px;
+                            height: parent.height - 8px;
+                            moved => {
+                                if (move-area.pressed) {
+                                    parent.rel-x += (move-area.mouse-x - move-area.pressed-x) / screen.width;
+                                    parent.rel-y += (move-area.mouse-y - move-area.pressed-y) / screen.height;
+                                    root.zone-moved(i, parent.rel-x, parent.rel-y);
+                                }
+                            }
+                        }
+
+                        handle-visual := Rectangle {
+                            x: parent.width - 8px;
+                            y: parent.height - 8px;
+                            width: 8px;
+                            height: 8px;
+                            background: Palette.accent;
+                        }
+
+                        resize-area := TouchArea {
+                            x: parent.width - 10px;
+                            y: parent.height - 10px;
+                            width: 10px;
+                            height: 10px;
+                            mouse-cursor: nwse-resize;
+                            moved => {
+                                if (resize-area.pressed) {
+                                    parent.rel-w += (resize-area.mouse-x - resize-area.pressed-x) / screen.width;
+                                    parent.rel-h += (resize-area.mouse-y - resize-area.pressed-y) / screen.height;
+                                    root.zone-resized(i, parent.rel-w, parent.rel-h);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ProcessingPage inherits Rectangle {
+    in property <[LedColorRow]> leds;
+    in-out property <float> smoothing: 0;
+    in-out property <float> threshold: 50;
+    in-out property <float> gamma: 50;
+    in-out property <float> color-temp: 50;
+    in-out property <float> letterbox-cutoff: 0;
+    in property <string> status-text;
+    callback smoothing-changed(float);
+    callback threshold-changed(float);
+    callback gamma-changed(float);
+    callback color-temp-changed(float);
+    callback letterbox-cutoff-changed(float);
+    callback save();
+
+    background: Palette.bg;
+
+    HorizontalLayout {
+        padding: 32px;
+        alignment: start;
+
+        VerticalLayout {
+            max-width: 860px;
+            spacing: 10px;
+
+            Text {
+                text: "Processing";
+                font-size: 22px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Live colors sampled from your screen for each LED zone defined on the LED page — read-only here.";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            screen := Rectangle {
+                width: 860px;
+                height: 484px;
+                background: #000000;
+                border-width: 2px;
+                border-color: Palette.border;
+
+                for led in root.leds : Rectangle {
+                    x: led.x * screen.width;
+                    y: led.y * screen.height;
+                    width: led.w * screen.width;
+                    height: led.h * screen.height;
+                    background: led.color;
+                }
+            }
+
+            Rectangle { height: 12px; }
+
+            Text {
+                text: "Letterbox cutoff";
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Prevents a letterbox bar or other dark border from diluting a bright highlight when averaging a zone. 0 = plain average. Higher values ignore dark pixels more aggressively (strongest near the outer edge of each zone, where borders usually sit).";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.letterbox-cutoff;
+                    changed(v) => { root.letterbox-cutoff-changed(v); }
+                }
+                Text {
+                    text: "\{round(root.letterbox-cutoff)}%";
+                    font-size: 13px;
+                    color: Palette.text-primary;
+                    vertical-alignment: center;
+                    width: 44px;
+                }
+            }
+
+            Rectangle { height: 12px; }
+
+            Text {
+                text: "Smoothing";
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Blends each LED with its two neighbors so adjacent LEDs transition smoothly instead of flipping abruptly. 0 = off, 100 = maximum blending.";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.smoothing;
+                    changed(v) => { root.smoothing-changed(v); }
+                }
+                Text {
+                    text: "\{round(root.smoothing)}%";
+                    font-size: 13px;
+                    color: Palette.text-primary;
+                    vertical-alignment: center;
+                    width: 44px;
+                }
+            }
+
+            Rectangle { height: 12px; }
+
+            Text {
+                text: "Threshold";
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Middle = unchanged. Drag left to crush dark colors to pure black (so a near-black screen reads as \"off\" instead of a faint glow, stronger the further left). Drag right to lift/overbrighten everything, including blacks (stronger the further right).";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.threshold;
+                    changed(v) => { root.threshold-changed(v); }
+                }
+                Text {
+                    text: "\{round(root.threshold)}";
+                    font-size: 13px;
+                    color: Palette.text-primary;
+                    vertical-alignment: center;
+                    width: 44px;
+                }
+            }
+
+            Rectangle { height: 12px; }
+
+            Text {
+                text: "Gamma";
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Corrects for the LED strip's actual color output not perceptually matching the screen. Middle = unchanged. Left brightens midtones, right darkens them.";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.gamma;
+                    changed(v) => { root.gamma-changed(v); }
+                }
+                Text {
+                    text: "\{round(root.gamma)}";
+                    font-size: 13px;
+                    color: Palette.text-primary;
+                    vertical-alignment: center;
+                    width: 44px;
+                }
+            }
+
+            Rectangle { height: 12px; }
+
+            Text {
+                text: "Color temperature";
+                font-size: 16px;
+                font-weight: 700;
+                color: Palette.text-primary;
+            }
+            Text {
+                text: "Compensates for the LED strip's white point not matching the screen's. Middle = unchanged. Left is cooler (more blue), right is warmer (more red/orange).";
+                font-size: 13px;
+                color: Palette.text-secondary;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Slider {
+                    minimum: 0;
+                    maximum: 100;
+                    value <=> root.color-temp;
+                    changed(v) => { root.color-temp-changed(v); }
+                }
+                Text {
+                    text: "\{round(root.color-temp)}";
+                    font-size: 13px;
+                    color: Palette.text-primary;
+                    vertical-alignment: center;
+                    width: 44px;
+                }
+            }
+
+            Rectangle { height: 6px; }
+
+            HorizontalLayout {
+                spacing: 12px;
+                Button {
+                    text: "Save";
+                    primary: true;
+                    clicked => { root.save(); }
+                }
+                Text {
+                    text: root.status-text;
+                    color: Palette.accent;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "rustlight";
+    icon: @image-url("app-icon.png");
+    preferred-width: 1480px;
+    preferred-height: 660px;
+    background: Palette.bg;
+
+    callback hide_to_tray();
+    property <int> selected-page: 0;
+
+    in property <[string]> display-options: [];
+    in property <[string]> resolution-options: [];
+    in-out property <int> selected-display-index: 0;
+    in-out property <int> selected-resolution-index: 0;
+    in property <string> display-status: "";
+    callback save-display-settings(int, int);
+
+    in property <[DeviceRow]> devices: [];
+    in-out property <string> new-device-name;
+    in-out property <string> new-device-host;
+    in-out property <string> new-device-port: "21324";
+    in property <string> devices-status: "";
+    callback add-device(string, string, string);
+    callback remove-device(int);
+
+    in-out property <int> led-type-index: 0;
+    in-out property <int> led-count-top: 20;
+    in-out property <int> led-count-right: 10;
+    in-out property <int> led-count-bottom: 20;
+    in-out property <int> led-count-left: 10;
+    in-out property <bool> led-reverse-direction: false;
+    in-out property <int> led-start-edge-index: 0;
+    in-out property <int> led-start-offset: 0;
+    in-out property <float> led-sampling-depth: 10;
+    in-out property <float> led-corner-overlap: 0;
+    in property <[GapRow]> led-gaps: [];
+    in-out property <int> led-new-gap-edge-index: 0;
+    in-out property <int> led-new-gap-after: 0;
+    in-out property <int> led-new-gap-size: 4;
+    in property <[LedZoneRow]> led-zones: [];
+    in property <string> led-status: "";
+    callback add-led-gap(int, int, int);
+    callback remove-led-gap(int);
+    callback reset-led-layout();
+    callback save-led-settings();
+    callback led-zone-moved(int, float, float);
+    callback led-zone-resized(int, float, float);
+
+    in property <[LedColorRow]> processing-leds: [];
+    in-out property <float> processing-smoothing: 0;
+    in-out property <float> processing-threshold: 50;
+    in-out property <float> processing-gamma: 50;
+    in-out property <float> processing-color-temp: 50;
+    in-out property <float> processing-letterbox-cutoff: 0;
+    in property <string> processing-status: "";
+    callback processing-smoothing-changed(float);
+    callback processing-threshold-changed(float);
+    callback processing-gamma-changed(float);
+    callback processing-color-temp-changed(float);
+    callback processing-letterbox-cutoff-changed(float);
+    callback save-processing-settings();
+
+    HorizontalLayout {
+        Sidebar {
+            selected-index: root.selected-page;
+            select(i) => { root.selected-page = i; }
+            hide-to-tray => { root.hide_to_tray(); }
+        }
+
+        if root.selected-page == 1 : LedPage {
+            horizontal-stretch: 1;
+            led-type-index <=> root.led-type-index;
+            count-top <=> root.led-count-top;
+            count-right <=> root.led-count-right;
+            count-bottom <=> root.led-count-bottom;
+            count-left <=> root.led-count-left;
+            reverse-direction <=> root.led-reverse-direction;
+            start-edge-index <=> root.led-start-edge-index;
+            start-offset <=> root.led-start-offset;
+            sampling-depth <=> root.led-sampling-depth;
+            corner-overlap <=> root.led-corner-overlap;
+            gaps: root.led-gaps;
+            new-gap-edge-index <=> root.led-new-gap-edge-index;
+            new-gap-after <=> root.led-new-gap-after;
+            new-gap-size <=> root.led-new-gap-size;
+            zones: root.led-zones;
+            status-text: root.led-status;
+            add-gap(e, a, s) => { root.add-led-gap(e, a, s); }
+            remove-gap(i) => { root.remove-led-gap(i); }
+            reset-layout => { root.reset-led-layout(); }
+            save => { root.save-led-settings(); }
+            zone-moved(i, x, y) => { root.led-zone-moved(i, x, y); }
+            zone-resized(i, w, h) => { root.led-zone-resized(i, w, h); }
+        }
+        if root.selected-page == 2 : DisplayPage {
+            horizontal-stretch: 1;
+            display-options: root.display-options;
+            resolution-options: root.resolution-options;
+            display-index <=> root.selected-display-index;
+            resolution-index <=> root.selected-resolution-index;
+            status-text: root.display-status;
+            save(d, r) => { root.save-display-settings(d, r); }
+        }
+        if root.selected-page == 3 : ProcessingPage {
+            horizontal-stretch: 1;
+            leds: root.processing-leds;
+            smoothing <=> root.processing-smoothing;
+            threshold <=> root.processing-threshold;
+            gamma <=> root.processing-gamma;
+            color-temp <=> root.processing-color-temp;
+            letterbox-cutoff <=> root.processing-letterbox-cutoff;
+            status-text: root.processing-status;
+            smoothing-changed(v) => { root.processing-smoothing-changed(v); }
+            threshold-changed(v) => { root.processing-threshold-changed(v); }
+            gamma-changed(v) => { root.processing-gamma-changed(v); }
+            color-temp-changed(v) => { root.processing-color-temp-changed(v); }
+            letterbox-cutoff-changed(v) => { root.processing-letterbox-cutoff-changed(v); }
+            save => { root.save-processing-settings(); }
+        }
+        if root.selected-page == 0 : DevicesPage {
+            horizontal-stretch: 1;
+            devices: root.devices;
+            new-name <=> root.new-device-name;
+            new-host <=> root.new-device-host;
+            new-port <=> root.new-device-port;
+            status-text: root.devices-status;
+            add-device(n, h, p) => { root.add-device(n, h, p); }
+            remove-device(i) => { root.remove-device(i); }
+        }
+    }
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("tray-icon.png");
+    tooltip: "rustlight";
+
+    callback show_window();
+    callback quit_app();
+
+    Menu {
+        MenuItem { title: "Show"; activated => { show_window(); } }
+        MenuItem { title: "Quit"; activated => { quit_app(); } }
+    }
+
+    clicked => { show_window(); }
+}
