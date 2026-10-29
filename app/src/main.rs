@@ -1,3 +1,9 @@
+// No console window in release builds (debug builds keep it, in case
+// println!/eprintln! debugging is needed) — without this, Rust's default
+// "console" subsystem opens a terminal alongside the GUI, and closing that
+// terminal kills the app too.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! Entry point. GUI: Slint (window + tray). A dedicated background thread
 //! owns the capture session: it blocks on each frame (correct there, since
 //! it's not the UI thread), runs the full color pipeline, sends the result
