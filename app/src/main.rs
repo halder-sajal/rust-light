@@ -350,6 +350,10 @@ fn main() -> Result<(), slint::PlatformError> {
         .collect();
     window.set_resolution_options(slint::ModelRc::new(slint::VecModel::from(resolution_labels)));
 
+    let max_fps_labels: Vec<slint::SharedString> =
+        MAX_FPS_PRESETS.iter().map(|(label, _)| (*label).into()).collect();
+    window.set_max_fps_options(slint::ModelRc::new(slint::VecModel::from(max_fps_labels)));
+
     {
         let cfg = state.borrow();
         let initial_display_index = if displays.is_empty() {
@@ -364,26 +368,39 @@ fn main() -> Result<(), slint::PlatformError> {
             .position(|(_, w, h)| *w == cfg.display.capture_width && *h == cfg.display.capture_height)
             .unwrap_or(0) as i32;
         window.set_selected_resolution_index(initial_resolution_index);
+
+        let initial_max_fps_index = MAX_FPS_PRESETS
+            .iter()
+            .position(|(_, fps)| *fps == cfg.max_send_fps)
+            .unwrap_or(0) as i32;
+        window.set_max_fps_index(initial_max_fps_index);
     }
 
     {
         let window_weak = window.as_weak();
         let state = state.clone();
-        window.on_save_display_settings(move |display_index, resolution_index| {
+        let live = live.clone();
+        window.on_save_display_settings(move |display_index, resolution_index, max_fps_index| {
             let Some(window) = window_weak.upgrade() else {
                 return;
             };
             let (_, capture_width, capture_height) = RESOLUTION_PRESETS
                 [resolution_index.clamp(0, RESOLUTION_PRESETS.len() as i32 - 1) as usize];
+            let (_, max_send_fps) =
+                MAX_FPS_PRESETS[max_fps_index.clamp(0, MAX_FPS_PRESETS.len() as i32 - 1) as usize];
 
             state.borrow_mut().display = config::DisplayConfig {
                 monitor_index: display_index.max(0) as usize,
                 capture_width,
                 capture_height,
             };
+            state.borrow_mut().max_send_fps = max_send_fps;
 
             let status = match state.borrow().save() {
-                Ok(()) => "Saved".to_string(),
+                Ok(()) => {
+                    sync_live(&live, &state.borrow());
+                    "Saved".to_string()
+                }
                 Err(e) => format!("Failed to save: {e}"),
             };
             window.set_display_status(status.into());
@@ -399,38 +416,6 @@ fn main() -> Result<(), slint::PlatformError> {
         &state.borrow().devices,
         &[],
     ))));
-
-    let max_fps_labels: Vec<slint::SharedString> =
-        MAX_FPS_PRESETS.iter().map(|(label, _)| (*label).into()).collect();
-    window.set_max_fps_options(slint::ModelRc::new(slint::VecModel::from(max_fps_labels)));
-    {
-        let current = state.borrow().max_send_fps;
-        let initial_max_fps_index = MAX_FPS_PRESETS
-            .iter()
-            .position(|(_, fps)| *fps == current)
-            .unwrap_or(0) as i32;
-        window.set_max_fps_index(initial_max_fps_index);
-    }
-
-    {
-        let window_weak = window.as_weak();
-        let state = state.clone();
-        let live = live.clone();
-        window.on_max_fps_changed(move |index| {
-            let Some(window) = window_weak.upgrade() else {
-                return;
-            };
-            let (_, fps) = MAX_FPS_PRESETS[index.clamp(0, MAX_FPS_PRESETS.len() as i32 - 1) as usize];
-            state.borrow_mut().max_send_fps = fps;
-            sync_live(&live, &state.borrow());
-            let status = match state.borrow().save() {
-                Ok(()) => "Saved".to_string(),
-                Err(e) => format!("Failed to save: {e}"),
-            };
-            window.set_devices_status(status.into());
-            clear_status_after(&window, MainWindow::set_devices_status);
-        });
-    }
 
     {
         let window_weak = window.as_weak();

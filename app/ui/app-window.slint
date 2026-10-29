@@ -182,8 +182,10 @@ component DisplayPage inherits Rectangle {
     in property <[string]> resolution-options;
     in-out property <int> display-index;
     in-out property <int> resolution-index;
+    in property <[string]> max-fps-options;
+    in-out property <int> max-fps-index;
     in property <string> status-text;
-    callback save(int, int);
+    callback save(int, int, int);
 
     background: Palette.bg;
 
@@ -235,6 +237,24 @@ component DisplayPage inherits Rectangle {
                     current-index <=> root.resolution-index;
                 }
 
+                Rectangle { height: 6px; }
+
+                Text {
+                    text: "Max update rate";
+                    font-size: 12px;
+                    color: Palette.text-secondary;
+                }
+                Text {
+                    text: "Caps how often the screen is sampled and sent, to cut CPU use during fast-moving content. Ambient lighting doesn't need more than this to look smooth.";
+                    font-size: 11px;
+                    color: Palette.text-secondary;
+                    wrap: word-wrap;
+                }
+                ComboBox {
+                    model: root.max-fps-options;
+                    current-index <=> root.max-fps-index;
+                }
+
                 Rectangle { height: 14px; }
 
                 HorizontalLayout {
@@ -242,7 +262,7 @@ component DisplayPage inherits Rectangle {
                     Button {
                         text: "Save";
                         primary: true;
-                        clicked => { root.save(root.display-index, root.resolution-index); }
+                        clicked => { root.save(root.display-index, root.resolution-index, root.max-fps-index); }
                     }
                     Text {
                         text: root.status-text;
@@ -262,11 +282,8 @@ component DevicesPage inherits Rectangle {
     in-out property <string> new-host;
     in-out property <string> new-port: "21324";
     in property <string> status-text;
-    in property <[string]> max-fps-options;
-    in-out property <int> max-fps-index;
     callback add-device(string, string, string);
     callback remove-device(int);
-    callback max-fps-changed(int);
 
     background: Palette.bg;
 
@@ -413,38 +430,6 @@ component DevicesPage inherits Rectangle {
             }
         }
 
-        Rectangle { height: 6px; }
-
-        Rectangle {
-            border-radius: 10px;
-            border-width: 1px;
-            border-color: Palette.border;
-            background: Palette.bg-elevated;
-
-            VerticalLayout {
-                padding: 14px;
-                spacing: 8px;
-
-                Text {
-                    text: "Max update rate";
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: Palette.text-primary;
-                }
-                Text {
-                    text: "Caps how often the screen is sampled and sent, to cut CPU use during fast-moving content. Ambient lighting doesn't need more than this to look smooth.";
-                    font-size: 11px;
-                    color: Palette.text-secondary;
-                    wrap: word-wrap;
-                }
-                ComboBox {
-                    width: 160px;
-                    model: root.max-fps-options;
-                    current-index <=> root.max-fps-index;
-                    selected(value) => { root.max-fps-changed(root.max-fps-index); }
-                }
-            }
-        }
             }
         }
     }
@@ -1039,18 +1024,17 @@ export component MainWindow inherits Window {
     in-out property <int> selected-display-index: 0;
     in-out property <int> selected-resolution-index: 0;
     in property <string> display-status: "";
-    callback save-display-settings(int, int);
+    in property <[string]> max-fps-options: [];
+    in-out property <int> max-fps-index: 0;
+    callback save-display-settings(int, int, int);
 
     in property <[DeviceRow]> devices: [];
     in-out property <string> new-device-name;
     in-out property <string> new-device-host;
     in-out property <string> new-device-port: "21324";
     in property <string> devices-status: "";
-    in property <[string]> max-fps-options: [];
-    in-out property <int> max-fps-index: 0;
     callback add-device(string, string, string);
     callback remove-device(int);
-    callback max-fps-changed(int);
 
     in-out property <int> led-type-index: 0;
     in-out property <int> led-count-top: 20;
@@ -1127,8 +1111,10 @@ export component MainWindow inherits Window {
             resolution-options: root.resolution-options;
             display-index <=> root.selected-display-index;
             resolution-index <=> root.selected-resolution-index;
+            max-fps-options: root.max-fps-options;
+            max-fps-index <=> root.max-fps-index;
             status-text: root.display-status;
-            save(d, r) => { root.save-display-settings(d, r); }
+            save(d, r, f) => { root.save-display-settings(d, r, f); }
         }
         if root.selected-page == 3 : ProcessingPage {
             horizontal-stretch: 1;
@@ -1153,11 +1139,8 @@ export component MainWindow inherits Window {
             new-host <=> root.new-device-host;
             new-port <=> root.new-device-port;
             status-text: root.devices-status;
-            max-fps-options: root.max-fps-options;
-            max-fps-index <=> root.max-fps-index;
             add-device(n, h, p) => { root.add-device(n, h, p); }
             remove-device(i) => { root.remove-device(i); }
-            max-fps-changed(i) => { root.max-fps-changed(i); }
         }
     }
 }
