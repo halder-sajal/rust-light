@@ -104,7 +104,7 @@ pub struct Gap {
 
 /// One LED's screen-sampling rectangle, in coordinates relative to the
 /// captured frame (0.0..1.0 on each axis) so it's resolution-independent.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LedZone {
     pub x: f32,
     pub y: f32,

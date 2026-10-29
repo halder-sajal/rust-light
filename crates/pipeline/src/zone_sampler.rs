@@ -32,10 +32,12 @@ pub struct Zone {
 /// to a truly bright pixel.
 const MAX_EXPONENT: f32 = 10.0;
 
-/// Samples every other pixel on each axis rather than every pixel — a 4x
+/// Samples every 4th pixel on each axis rather than every pixel — a 16x
 /// speedup for a preview-grade average that doesn't need per-pixel
-/// precision.
-const STEP: u32 = 2;
+/// precision. Even a narrow edge zone (e.g. ~20px wide at 1080p for a
+/// 90-LED edge) still gets a handful of samples per axis, plenty for an
+/// averaged color.
+const STEP: u32 = 4;
 
 pub struct ZoneSampler {
     pub zones: Vec<Zone>,

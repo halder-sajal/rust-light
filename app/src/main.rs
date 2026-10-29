@@ -22,7 +22,13 @@ use pipeline::{Effect, Sampler, Smoother};
 use std::cell::RefCell;
 use std::net::ToSocketAddrs;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
+
+/// Index of the Processing page in the sidebar (`selected-page` in the
+/// Slint UI) — the send thread only needs to build/push the live preview
+/// when this page is actually visible.
+const PROCESSING_PAGE_INDEX: i32 = 3;
 
 /// WLED stays in realtime mode for this many seconds after the last packet
 /// before reverting to normal mode on its own — short enough that closing
@@ -84,7 +90,11 @@ fn sync_live(live: &Arc<Mutex<LiveParams>>, cfg: &config::Config) {
 /// nothing), snapshots the latest settings, runs the pipeline, sends to
 /// every configured device, and pushes the preview + connected status back
 /// to the UI thread via `invoke_from_event_loop`.
-fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveParams>>) {
+fn spawn_send_thread(
+    window_weak: slint::Weak<MainWindow>,
+    live: Arc<Mutex<LiveParams>>,
+    current_page: Arc<AtomicI32>,
+) {
     std::thread::spawn(move || {
         let Ok(mut capturer) = capture::PlatformCapturer::new() else {
             return;
@@ -96,6 +106,11 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
         let mut connected: Vec<bool> = Vec::new();
         // Far enough in the past that the very first frame always sends.
         let mut last_sent = std::time::Instant::now() - std::time::Duration::from_secs(1);
+
+        // Reused across iterations instead of allocating fresh every frame.
+        let mut zones_for: Vec<config::LedZone> = Vec::new();
+        let mut sampler = pipeline::ZoneSampler { zones: Vec::new(), letterbox_cutoff: 0.0 };
+        let mut pixels: Vec<wled_proto::Rgb> = Vec::new();
 
         loop {
             let Ok(frame) = capturer.capture(&display_id) else {
@@ -124,10 +139,14 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
                 senders_for = params.devices.clone();
             }
 
-            let sampler = pipeline::ZoneSampler {
-                zones: params.zones.iter().map(|z| pipeline::Zone { x: z.x, y: z.y, w: z.w, h: z.h }).collect(),
-                letterbox_cutoff: params.processing.letterbox_cutoff / 100.0,
-            };
+            if zones_for != params.zones {
+                sampler.zones.clear();
+                sampler
+                    .zones
+                    .extend(params.zones.iter().map(|z| pipeline::Zone { x: z.x, y: z.y, w: z.w, h: z.h }));
+                zones_for = params.zones.clone();
+            }
+            sampler.letterbox_cutoff = params.processing.letterbox_cutoff / 100.0;
             let mut colors = sampler.sample(&frame, params.zones.len());
 
             // Threshold before smoothing, so crushed/lifted noise doesn't
@@ -146,8 +165,8 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
             let gamma = GAMMA_RANGE.powf((params.processing.gamma - 50.0) / 50.0);
             pipeline::GammaCorrection { gamma }.apply(&mut colors);
 
-            let pixels: Vec<wled_proto::Rgb> =
-                colors.iter().map(|c| wled_proto::Rgb { r: c.r, g: c.g, b: c.b }).collect();
+            pixels.clear();
+            pixels.extend(colors.iter().map(|c| wled_proto::Rgb { r: c.r, g: c.g, b: c.b }));
             let mut changed = false;
             for (i, ds) in senders.iter().enumerate() {
                 let ok =
@@ -158,26 +177,42 @@ fn spawn_send_thread(window_weak: slint::Weak<MainWindow>, live: Arc<Mutex<LiveP
                 }
             }
 
-            let rows: Vec<LedColorRow> = params
-                .zones
-                .iter()
-                .zip(colors.iter())
-                .map(|(z, c)| LedColorRow {
-                    x: z.x,
-                    y: z.y,
-                    w: z.w,
-                    h: z.h,
-                    color: slint::Color::from_rgb_u8(c.r, c.g, c.b),
-                })
-                .collect();
+            // Only build the preview when the Processing page is actually
+            // visible — the UI push (allocation + cross-thread dispatch)
+            // is otherwise pure waste every single frame.
+            let preview_visible = current_page.load(Ordering::Relaxed) == PROCESSING_PAGE_INDEX;
+            let preview_rows = if preview_visible {
+                Some(
+                    params
+                        .zones
+                        .iter()
+                        .zip(colors.iter())
+                        .map(|(z, c)| LedColorRow {
+                            x: z.x,
+                            y: z.y,
+                            w: z.w,
+                            h: z.h,
+                            color: slint::Color::from_rgb_u8(c.r, c.g, c.b),
+                        })
+                        .collect::<Vec<LedColorRow>>(),
+                )
+            } else {
+                None
+            };
             let devices_for_ui = if changed { Some((params.devices.clone(), connected.clone())) } else { None };
+
+            if preview_rows.is_none() && devices_for_ui.is_none() {
+                continue;
+            }
 
             let window_weak = window_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(window) = window_weak.upgrade() else {
                     return;
                 };
-                window.set_processing_leds(slint::ModelRc::new(slint::VecModel::from(rows)));
+                if let Some(rows) = preview_rows {
+                    window.set_processing_leds(slint::ModelRc::new(slint::VecModel::from(rows)));
+                }
                 if let Some((devices, connected)) = devices_for_ui {
                     window.set_devices(slint::ModelRc::new(slint::VecModel::from(device_rows(
                         &devices, &connected,
@@ -334,6 +369,16 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     }
     let live: Arc<Mutex<LiveParams>> = Arc::new(Mutex::new(LiveParams::from_config(&state.borrow())));
+
+    // Tracks which sidebar page is visible, so the send thread can skip
+    // building the Processing page preview when it isn't shown.
+    let current_page: Arc<AtomicI32> = Arc::new(AtomicI32::new(0));
+    {
+        let current_page = current_page.clone();
+        window.on_page_changed(move |index| {
+            current_page.store(index, Ordering::Relaxed);
+        });
+    }
 
     // --- Display page ---
     let displays = capture::available_displays().unwrap_or_default();
@@ -719,7 +764,7 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    spawn_send_thread(window.as_weak(), live.clone());
+    spawn_send_thread(window.as_weak(), live.clone(), current_page.clone());
 
     // `--minimized`: start hidden in the tray (used by the Windows
     // installer's optional "start with Windows" autostart entry).

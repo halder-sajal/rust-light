@@ -1018,6 +1018,7 @@ export component MainWindow inherits Window {
 
     callback hide_to_tray();
     property <int> selected-page: 0;
+    callback page-changed(int);
 
     in property <[string]> display-options: [];
     in property <[string]> resolution-options: [];
@@ -1076,7 +1077,7 @@ export component MainWindow inherits Window {
     HorizontalLayout {
         Sidebar {
             selected-index: root.selected-page;
-            select(i) => { root.selected-page = i; }
+            select(i) => { root.selected-page = i; root.page-changed(i); }
             hide-to-tray => { root.hide_to_tray(); }
         }
 
