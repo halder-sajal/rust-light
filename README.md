@@ -52,6 +52,46 @@ Run the test suite:
 cargo test --workspace
 ```
 
+## Benchmarking (Windows)
+
+Two standalone tools under `crates/pipeline/examples/`, both built via
+`cargo build --release --example <name> -p pipeline` (always release —
+see [CLAUDE.md](./CLAUDE.md) for why debug numbers aren't representative).
+Each takes an optional duration in seconds as its first arg (default:
+`bench` runs a fixed 120 frames if omitted; `e2e_bench` defaults to 60s):
+
+- **`bench`** — synthetic: a representative 60-LED zone layout, worst-case
+  processing settings, no network send. Good for a quick regression check
+  after touching the pipeline.
+
+  ```powershell
+  cargo run --release --example bench -p pipeline -- 60
+  ```
+
+- **`e2e_bench`** — real end-to-end: loads your actual saved LED layout
+  and processing settings from `config.toml`, captures your real screen,
+  and sends real DNRGB frames to every device you've configured — the
+  exact same per-frame work the app's send thread does, just with
+  separate timing for the capture / process / UDP-send stages. This
+  genuinely drives your LEDs for the run's duration, so play a video or
+  game while it runs to give it real motion to react to. Requires having
+  set up at least one device and a saved LED layout in the app first.
+
+  ```powershell
+  cargo run --release --example e2e_bench -p pipeline -- 60
+  ```
+
+  To also see CPU/memory usage for the run, start it as its own process
+  and sample `Get-Process` alongside it, e.g.:
+
+  ```powershell
+  $proc = Start-Process .\target\release\examples\e2e_bench.exe -ArgumentList 60 -NoNewWindow -PassThru
+  while (-not $proc.HasExited) {
+      Start-Sleep -Seconds 1
+      Get-Process -Id $proc.Id | Select-Object CPU, WorkingSet64
+  }
+  ```
+
 ## Project layout
 
 ```

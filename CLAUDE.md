@@ -252,7 +252,15 @@ implementations, applied in this order by `app`'s send thread:
 
 Run `cargo run --release --example bench -p pipeline` to re-measure
 processing time after changing this pipeline (it uses a representative
-60-LED layout; real timing scales roughly with actual LED count).
+60-LED layout; real timing scales roughly with actual LED count). Pass a
+duration in seconds (e.g. `-- 60`) to run timed instead of a fixed 120
+frames. For a true end-to-end number — real capture, your actual saved
+layout/settings, real UDP sends to your real device(s) — use
+`cargo run --release --example e2e_bench -p pipeline -- 60` instead; see
+the "Benchmarking (Windows)" section in [README.md](./README.md) for
+details. Both report per-stage avg/p50/p95/p99/max, not just an average —
+capture-wait variance (static screen vs. motion) is large enough that an
+average alone hides it.
 
 ### `app`
 

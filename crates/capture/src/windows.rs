@@ -23,6 +23,13 @@ type HandlerError = Box<dyn std::error::Error + Send + Sync>;
 
 struct FrameSink {
     tx: SyncSender<Frame>,
+    // Reused across frames instead of a fresh `Vec::new()` per call - the
+    // underlying `as_nopadding_buffer` resizes this only when the frame's
+    // row pitch includes padding, and every frame is the same resolution,
+    // so after the first call this never reallocates. Without reuse, every
+    // single captured frame paid for a fresh multi-MB alloc + zero-fill on
+    // WGC's own capture thread for no reason.
+    scratch: Vec<u8>,
 }
 
 impl GraphicsCaptureApiHandler for FrameSink {
@@ -30,7 +37,7 @@ impl GraphicsCaptureApiHandler for FrameSink {
     type Error = HandlerError;
 
     fn new(ctx: Context<Self::Flags>) -> Result<Self, Self::Error> {
-        Ok(Self { tx: ctx.flags })
+        Ok(Self { tx: ctx.flags, scratch: Vec::new() })
     }
 
     fn on_frame_arrived(
@@ -41,8 +48,7 @@ impl GraphicsCaptureApiHandler for FrameSink {
         let width = frame.width();
         let height = frame.height();
         let buffer = frame.buffer()?;
-        let mut scratch = Vec::new();
-        let rgba = buffer.as_nopadding_buffer(&mut scratch).to_vec();
+        let rgba = buffer.as_nopadding_buffer(&mut self.scratch).to_vec();
 
         // Drop the frame if the consumer hasn't kept up — never block the
         // capture thread waiting for a slow reader.

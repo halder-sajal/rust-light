@@ -3526,6 +3526,7 @@ name = "pipeline"
 version = "0.1.0"
 dependencies = [
  "capture",
+ "toml 0.8.23",
  "wled-proto",
 ]
 

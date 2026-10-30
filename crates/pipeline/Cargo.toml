@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 capture = { path = "../capture" }
 wled-proto = { path = "../wled-proto" }
+
+[dev-dependencies]
+toml = "0.8"
