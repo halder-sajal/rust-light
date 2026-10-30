@@ -186,7 +186,13 @@ their own module or a deliberately platform-specific example/test.
   — `pipewire-sys`/`libspa-sys`'s build scripts find them via `pkg-config`
   the same way any other native-library Rust crate does. Nothing project-
   specific needed beyond that (both paths need PipeWire; path one's D-Bus
-  calls via `zbus` need no extra system packages).
+  calls via `zbus` need no extra system packages). Note this is separate
+  from `app`'s own Linux build-time deps below (Slint's GUI backend needs
+  a few dev packages of its own) - a desktop dev machine usually has both
+  sets already via its desktop environment, which is exactly how the
+  Slint-side gap went unnoticed locally and only surfaced on the release
+  workflow's bare `ubuntu-latest` runner. See `scripts/build-linux.sh` for
+  the full list of both.
 
 - **`macos.rs`** (stub): implements the trait, compiles cleanly on that
   target, every method returns `CaptureError::NotImplemented`.
@@ -439,9 +445,11 @@ release already exists for that tag rather than fighting over creating it.
   release trigger path, keep passing `/DMyAppVersion` through it too, or
   the installer filename/AppVersion will silently drift from the actual
   tag.
-- **`build-linux`** (`ubuntu-latest`): installs PipeWire's dev headers
-  (needed to build the `capture` crate's Linux backend - see
-  "crates/capture" above), builds the release binary, tars it up as
+- **`build-linux`** (`ubuntu-latest`): installs the Linux build deps
+  listed in `scripts/build-linux.sh` (PipeWire's, for the `capture`
+  crate's Linux backend, plus Slint's GUI-backend deps, which a bare CI
+  runner doesn't have pre-installed the way a desktop machine does),
+  builds the release binary, tars it up as
   `rustlight-<version>-linux-x86_64.tar.gz` (binary renamed `rustlight`
   inside the archive, not left as `app`), publishes it. No installer/
   packaging beyond the tarball - no `.deb`/AppImage/Flatpak, that's a

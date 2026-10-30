@@ -7,12 +7,10 @@
 # ScreenCast session open and fight the new one for the screen-share
 # picker dialog.)
 #
-# Building the `capture` crate's Linux backend needs PipeWire's dev
-# headers on the system (see CLAUDE.md's "crates/capture" section):
-#   sudo apt install libpipewire-0.3-dev libspa-0.2-dev
-# (or the equivalent for your distro). This script doesn't install them
-# for you - if `cargo run` fails with a pkg-config error about
-# `libpipewire-0.3`, that's the fix.
+# Needs a few dev packages installed system-wide - see
+# scripts/build-linux.sh for the full list and why. This script doesn't
+# install them for you - if `cargo run` fails with a pkg-config error,
+# that's the fix.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

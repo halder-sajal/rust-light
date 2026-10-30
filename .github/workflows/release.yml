@@ -84,10 +84,12 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Install PipeWire dev headers
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpipewire-0.3-dev libspa-0.2-dev
+          sudo apt-get install -y \
+            libpipewire-0.3-dev libspa-0.2-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libfontconfig-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
