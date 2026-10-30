@@ -5,9 +5,16 @@
 ;   & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\windows.iss
 ;
 ; Output lands in installer\output\rustlight-setup-<version>.exe.
+;
+; MyAppVersion defaults to 0.1.0 below but can be overridden without editing
+; this file, e.g. `ISCC.exe /DMyAppVersion=0.2.0 installer\windows.iss` - the
+; release GitHub Action does this so the installer version always matches
+; the pushed tag.
 
 #define MyAppName "rustlight"
+#ifndef MyAppVersion
 #define MyAppVersion "0.1.0"
+#endif
 #define MyAppPublisher "halder-sajal"
 #define MyAppURL "https://github.com/halder-sajal/rust-light"
 #define MyAppExeName "app.exe"

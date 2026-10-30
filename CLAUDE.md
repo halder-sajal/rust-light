@@ -309,6 +309,25 @@ needs the badge removed entirely, that requires either switching to the
 GPL-3.0 license (open-sourcing the app) or buying a Commercial license -
 removing it while staying on the free tier would violate the license terms.
 
+## Releasing (Windows installer via GitHub Actions)
+
+`.github/workflows/release.yml` builds the release binary, packages it with
+Inno Setup, and publishes the installer to a GitHub Release. Trigger it by
+pushing a version tag:
+
+```
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+(or run it manually from the Actions tab with a tag name via
+`workflow_dispatch`). The installer's `MyAppVersion` is **not** read from
+`Cargo.toml`/the tag automatically at the `.iss` level - the workflow passes
+it in via `ISCC.exe /DMyAppVersion=<version>`, and `installer/windows.iss`
+only falls back to its hardcoded `0.1.0` when that's absent (local manual
+builds via `scripts/build-windows-installer.ps1`). If you add a second
+release trigger path, keep passing `/DMyAppVersion` through it too, or the
+installer filename/AppVersion will silently drift from the actual tag.
+
 ## Known gaps / not yet done
 
 - **Linux/macOS capture**: scaffolded (trait + stub modules), not
