@@ -1,8 +1,8 @@
 # rustlight
 
 A from-scratch Rust desktop app that captures the screen and drives WLED
-ambient/bias LED lighting in real time (Lightpack-style). Windows-first;
-Linux/macOS capture backends are scaffolded but not implemented yet.
+ambient/bias LED lighting in real time (Lightpack-style). Windows and Linux
+capture are implemented; macOS is scaffolded but not implemented yet.
 
 This file is project knowledge for whoever (human or Claude) picks this up
 next: architecture, how things actually work, hard-won gotchas, and what's
@@ -22,12 +22,28 @@ that's a literal mirror of what's being sent.
 
 ## Quick start
 
+Windows:
+
 ```powershell
 cargo dev                      # alias for `cargo run -p app` (debug build)
 .\scripts\dev.ps1              # same, but kills a stray app.exe first
                                 # (Windows locks the binary file while a
                                 # previous instance is still running)
 .\scripts\build-windows.ps1    # release build -> target\release\app.exe
+```
+
+Linux:
+
+```sh
+cargo dev                   # alias for `cargo run -p app` (debug build)
+./scripts/dev.sh             # same, but kills a stray already-running
+                              # instance first (see dev.sh for why)
+./scripts/build-linux.sh     # release build -> target/release/app
+```
+
+Either platform:
+
+```sh
 cargo test --workspace         # all unit tests (44 as of this writing)
 ```
 
@@ -82,16 +98,105 @@ their own module or a deliberately platform-specific example/test.
   `ScreenCapturer`'s pull-based interface via a size-1 `sync_channel`
   (latest-frame-wins; the callback uses `try_send` and drops the frame if
   the channel is still full, rather than blocking the capture thread).
-- **`linux.rs`** / **`macos.rs`** (stubs): implement the trait, compile
-  cleanly on their target, every method returns `CaptureError::NotImplemented`.
+- **`linux.rs`** (implemented): **two capture paths, tried in order** -
+  read the module doc comment at the top of the file first, it's the
+  authoritative version of what's summarized here.
+
+  **Path one, direct to GNOME/Mutter** (the `mutter` submodule): calls
+  Mutter's own private `org.gnome.Mutter.ScreenCast` +
+  `org.gnome.Mutter.DisplayConfig` D-Bus interfaces straight up - no
+  `xdg-desktop-portal`, no dialog, real monitor enumeration (connector,
+  name, resolution) ahead of time, same shape as `windows.rs`'s
+  `Monitor::enumerate()`. This was *not* the original design - it only
+  exists because the first version (portal-only) correctly required a
+  one-time consent dialog on every desktop, which is how Wayland's
+  security model is supposed to work, but turned out to be a dealbreaker
+  for this project's actual use case (an always-on ambient-lighting app
+  you install and run yourself, not a sandboxed or distributed app) - the
+  user explicitly wanted zero-dialog, "just works" capture, and this is
+  the real way to get that on GNOME. Verified end-to-end against a live
+  GNOME 51/Mutter session: direct D-Bus calls for both monitor listing
+  and starting a cast, through to a real PipeWire node id, with no prompt
+  at any step.
+
+  This has two real costs, not just theoretical ones - know both before
+  touching this path:
+  - **GNOME-only.** `org.gnome.Mutter.ScreenCast` is Mutter-specific.
+    KDE/KWin has its own different private protocol
+    (`zkde_screencast_unstable_v1`, used e.g. by Sunshine's KWin grabber);
+    wlroots compositors have yet another, Wayland-protocol-level
+    mechanism (`wlr-screencopy` / the newer `ext-image-copy-capture-v1`).
+    Neither is implemented - on anything but GNOME, this path's first
+    D-Bus call simply fails (service not found) and falls straight
+    through to path two below.
+  - **Private, unstable API.** Mutter's own XML doc comment on this
+    interface says outright: "This API is private and not intended to be
+    used outside of the integrated system that uses libmutter. No
+    compatibility between versions are promised." It could change on any
+    GNOME upgrade with zero warning. The portal, by contrast, is a
+    versioned freedesktop.org spec every desktop commits to keeping
+    working. If this path starts failing after a GNOME update, that's
+    expected risk, not a bug to chase down surprised - path two is there
+    specifically so a break here degrades to "one dialog comes back,"
+    not "capture stops working."
+  - It also means **zero user-facing consent**, ever (GNOME Shell still
+    shows its normal screen-cast indicator in the top bar while a session
+    is running, but there's no "allow this?" prompt at any point). That's
+    a deliberate, considered tradeoff for this specific case - a trusted
+    app the user installed and runs themselves, same trust level
+    `gnome-remote-desktop` already operates at - not something to copy
+    into a context where that distinction matters (e.g. a Flatpak build,
+    where the sandbox would likely block this bus name anyway and this
+    path would naturally no-op into path two).
+
+  **Path two, `xdg-desktop-portal`'s ScreenCast portal + PipeWire**
+  (`open_portal`, using `ashpd`): the original design, now the fallback
+  for everything path one doesn't cover - KDE/KWin, wlroots compositors
+  via `xdg-desktop-portal-wlr`, or GNOME itself if path one ever breaks.
+  No monitor enumeration here (the compositor's own picker dialog handles
+  source selection the moment a session starts), and the dialog is
+  unavoidable the *first* time through this path specifically - that's
+  Wayland's security model working as intended for a portal-mediated app.
+  After that, `open_portal` requests `PersistMode::ExplicitlyRevoked` and
+  caches the restore token the portal hands back (see
+  `restore_token_path`), so later runs through this path reconnect
+  silently - until the user revokes that grant from their desktop's
+  privacy settings, which brings the dialog back.
+
+  **Both paths converge** on a PipeWire node id, after which everything
+  else in the file is shared: `run_pipewire_thread` connects to PipeWire
+  (directly, via the default local socket, for path one - we're not
+  sandboxed, so there's no fd hand-off needed there; via the fd the
+  portal provides for path two) and negotiates a video format - restricted
+  to RGB-family pixel formats (BGRx/RGBx/RGBA/BGRA/RGB/BGR, BGRx offered
+  first since that's what Mutter/KWin's SHM path typically negotiates)
+  via the `SPA_FORMAT` pod built there. YUV formats are deliberately left
+  off that offer list, not just unhandled in the converter: a screencast
+  producer reads straight from a GPU/CPU framebuffer, so it has no reason
+  to offer YUV (that's a video-codec concern) as long as we don't ask for
+  it. `capture()`'s `display` argument is still ignored either way -
+  `LinuxCapturer::new()` just picks the primary monitor automatically for
+  path one, or whatever the dialog returns for path two - same situation
+  as `WindowsCapturer` ignoring its own `display` argument today, just
+  for a different reason.
+
+  Building this crate on Linux needs PipeWire's dev headers
+  (`libpipewire-0.3-dev` + `libspa-0.2-dev` on Debian/Ubuntu, equivalent
+  package elsewhere) installed system-wide via the normal package manager
+  — `pipewire-sys`/`libspa-sys`'s build scripts find them via `pkg-config`
+  the same way any other native-library Rust crate does. Nothing project-
+  specific needed beyond that (both paths need PipeWire; path one's D-Bus
+  calls via `zbus` need no extra system packages).
+
+- **`macos.rs`** (stub): implements the trait, compiles cleanly on that
+  target, every method returns `CaptureError::NotImplemented`.
   `capture`'s Windows-only dependency is already scoped to
-  `[target.'cfg(windows)'.dependencies]` in `crates/capture/Cargo.toml`, so
-  building for another OS doesn't try to pull in `windows-capture` at all.
-  Likely implementation path when someone picks this up: Linux via
-  PipeWire + xdg-desktop-portal's ScreenCast portal (works across Wayland
-  compositors, asks permission like WGC does) with an X11 fallback; macOS
-  via ScreenCaptureKit (also push-based, so the same channel-bridge pattern
-  from `windows.rs` should carry over directly).
+  `[target.'cfg(windows)'.dependencies]` in `crates/capture/Cargo.toml`
+  (Linux's PipeWire/ashpd dependencies are similarly scoped to
+  `[target.'cfg(target_os = "linux")'.dependencies]`), so building for
+  macOS doesn't try to pull in either. Likely implementation path: 
+  ScreenCaptureKit (also push-based, so the same channel-bridge pattern
+  from `windows.rs`/`linux.rs` should carry over directly).
 
 **`capture()` vs `try_capture()` — this distinction exists for a real
 reason, don't collapse it back to one method.** `capture()` blocks until a
@@ -330,18 +435,36 @@ installer filename/AppVersion will silently drift from the actual tag.
 
 ## Known gaps / not yet done
 
-- **Linux/macOS capture**: scaffolded (trait + stub modules), not
-  implemented. See `crates/capture/src/linux.rs` / `macos.rs` for the
-  intended approach.
-- **`scripts/build-macos.sh` / `build-linux.sh`**: don't exist yet: add them
-  alongside their capture backend, following `build-windows.ps1`'s pattern.
+- **macOS capture**: scaffolded (trait + stub module), not implemented.
+  See `crates/capture/src/macos.rs` for the intended approach.
+- **Linux: KDE/wlroots get the dialog, GNOME doesn't**: only GNOME has a
+  direct, no-dialog capture path (Mutter's private D-Bus API - see
+  `linux.rs`'s module docs). KDE/KWin and wlroots compositors fall back to
+  the xdg-desktop-portal path, which still needs one one-time dialog
+  (persisted after that via a cached restore token - not required on
+  every run). Bringing KDE up to GNOME's level would mean implementing
+  KWin's own private `zkde_screencast_unstable_v1` protocol - a
+  real chunk of work, not attempted yet.
+- **Linux: no X11-only fallback**: neither capture path works without a
+  running compositor providing either Mutter's D-Bus API or an
+  xdg-desktop-portal ScreenCast backend. A desktop with none of those
+  (e.g. a bare X11 window manager with no portal) isn't covered.
+- **`scripts/build-macos.sh`**: doesn't exist yet: add it alongside that
+  capture backend, following `build-windows.ps1`/`build-linux.sh`'s
+  pattern.
 - **RGBW**: `LedType::Rgbw` exists as a config option but the pipeline only
   ever produces RGB `Rgb` triples - there's no white-channel computation
   anywhere downstream yet, and sending always uses DNRGB (RGB-only).
 - **Multi-monitor**: `DisplayId`/`capture()` take a display argument, but
-  `WindowsCapturer` always captures `Monitor::primary()` regardless of what's
-  passed - the Display page's monitor picker UI exists but isn't wired to
-  actually select a non-primary monitor for capture yet.
+  `WindowsCapturer` always captures `Monitor::primary()` regardless of
+  what's passed, and `LinuxCapturer` ignores it too - `new()` always picks
+  the primary monitor on the direct-Mutter path, or whatever the portal's
+  dialog returns on the fallback path. The Display page's monitor picker
+  UI exists but isn't wired to actually select a non-primary monitor on
+  either platform yet. On Linux's Mutter path specifically, the data
+  needed to fix this is now available (`mutter::monitors()` returns real
+  connector names - see `linux.rs`) - it just isn't threaded through
+  `app`'s UI/config yet.
 - **No per-device LED range**: every configured device receives the same
   full frame (all LEDs). No way yet to say "device A gets LEDs 1-100,
   device B gets 101-200" for a multi-controller physical setup.

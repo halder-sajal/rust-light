@@ -96,7 +96,11 @@ fn spawn_send_thread(
     current_page: Arc<AtomicI32>,
 ) {
     std::thread::spawn(move || {
-        let Ok(mut capturer) = capture::PlatformCapturer::new() else {
+        let capturer = capture::PlatformCapturer::new();
+        if let Err(e) = &capturer {
+            eprintln!("rustlight: capturer init failed: {e}");
+        }
+        let Ok(mut capturer) = capturer else {
             return;
         };
         let display_id = capture::DisplayId("0".to_string());
@@ -113,7 +117,11 @@ fn spawn_send_thread(
         let mut pixels: Vec<wled_proto::Rgb> = Vec::new();
 
         loop {
-            let Ok(frame) = capturer.capture(&display_id) else {
+            let frame = capturer.capture(&display_id);
+            if let Err(e) = &frame {
+                eprintln!("rustlight: capture() failed: {e}");
+            }
+            let Ok(frame) = frame else {
                 break;
             };
 

@@ -6,12 +6,12 @@
 //! directly.
 //!
 //! Windows is implemented (via `windows-capture` / Windows.Graphics.Capture).
-//! Linux and macOS are scaffolded but not implemented yet: the modules exist,
-//! implement `ScreenCapturer`, and compile on their target, but every method
-//! returns `CaptureError::NotImplemented` until a real backend is written
-//! (Linux: likely PipeWire/xdg-desktop-portal or X11 fallback; macOS:
-//! ScreenCaptureKit). Pick one, implement it in its module, and nothing
-//! outside this crate needs to change.
+//! Linux is implemented via xdg-desktop-portal's ScreenCast portal +
+//! PipeWire (see `linux.rs` for the details and caveats - notably, there's
+//! no X11-only fallback; a portal backend is required). macOS is scaffolded
+//! but not implemented yet: the module exists, implements `ScreenCapturer`,
+//! and compiles on that target, but every method returns
+//! `CaptureError::NotImplemented` (likely path: ScreenCaptureKit).
 
 #[cfg(windows)]
 pub mod windows;

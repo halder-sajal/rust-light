@@ -9,3 +9,22 @@ thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-capture = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# ashpd talks to xdg-desktop-portal over D-Bus to negotiate a ScreenCast
+# session; pipewire then consumes the video stream the portal hands back.
+# Both need matching major versions - ashpd 0.13.x pins pipewire ^0.9.
+ashpd = { version = "0.13", default-features = false, features = ["pipewire", "screencast", "async-io"] }
+pipewire = "0.9"
+async-io = "2"
+# Only to cache the portal's screen-share restore token between runs (see
+# `restore_token_path` in linux.rs) - same identifiers `app` uses for its
+# own config dir, so this lands next to it.
+directories = "5"
+# For talking to GNOME/Mutter's own private ScreenCast + DisplayConfig
+# D-Bus interfaces directly (see the `mutter` module in linux.rs) - this is
+# the *primary* capture path on GNOME, with ashpd/the portal as fallback.
+# "blocking-api" so this one isolated D-Bus exchange doesn't need its own
+# async runtime; ashpd already pulls the same major version via its
+# "async-io" feature, and Cargo unifies the two into one build.
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
