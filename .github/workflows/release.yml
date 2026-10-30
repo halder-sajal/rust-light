@@ -1,7 +1,9 @@
-name: Release Windows installer
+name: Release builds
 
-# Builds the release binary, packages it with Inno Setup, and publishes the
-# installer to a GitHub Release.
+# Builds the release binary for each platform and publishes it to a
+# GitHub Release: a Windows installer (packaged with Inno Setup) and a
+# Linux tarball. macOS isn't included - that capture backend is still a
+# stub (crates/capture/src/macos.rs).
 #
 # Trigger by pushing a tag like `v0.2.0`:
 #   git tag v0.2.0 && git push origin v0.2.0
@@ -66,3 +68,50 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: installer/output/rustlight-setup-${{ steps.version.outputs.version }}.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and version
+        id: version
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then tag="${{ github.ref_name }}"; fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install PipeWire dev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpipewire-0.3-dev libspa-0.2-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p app
+
+      - name: Package tarball
+        id: package
+        run: |
+          stage="rustlight-${{ steps.version.outputs.version }}-linux-x86_64"
+          mkdir "$stage"
+          cp target/release/app "$stage/rustlight"
+          tar -czf "$stage.tar.gz" "$stage"
+          echo "archive=$stage.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: rustlight ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: ${{ steps.package.outputs.archive }}
